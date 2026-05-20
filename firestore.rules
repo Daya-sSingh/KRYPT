@@ -1,0 +1,41 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isMember(serverId) {
+      return signedIn() &&
+        request.auth.uid in get(/databases/$(database)/documents/servers/$(serverId)).data.memberIds;
+    }
+
+    match /users/{userId} {
+      allow read: if signedIn();
+      allow write: if signedIn() && request.auth.uid == userId;
+    }
+
+    match /servers/{serverId} {
+      allow read: if signedIn() && request.auth.uid in resource.data.memberIds;
+      allow create: if signedIn();
+      allow update: if signedIn() && request.auth.uid in resource.data.memberIds;
+
+      match /channels/{channelId} {
+        allow read, write: if isMember(serverId);
+
+        match /messages/{messageId} {
+          allow read, create: if isMember(serverId);
+          allow delete: if isMember(serverId);
+        }
+      }
+
+      match /channelKeys/{channelId} {
+        allow read, write: if isMember(serverId);
+      }
+    }
+
+    match /calls/{callId} {
+      allow read, write: if signedIn();
+    }
+  }
+}

@@ -1,0 +1,34 @@
+.members-panel {
+  width: var(--members-w);
+  background: var(--bg-secondary);
+  padding: 16px 12px;
+}
+
+.members-panel header {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+
+.members-panel ul { list-style: none; }
+
+.member {
+  padding: 4px 8px;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.member.online {
+  color: var(--text);
+}
+
+.member.online::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  margin-right: 8px;
+}

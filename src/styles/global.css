@@ -1,0 +1,38 @@
+:root {
+  --accent: #1db954;
+  --accent-hover: #1ed760;
+  --bg-deep: #0a0a0a;
+  --bg-primary: #111214;
+  --bg-secondary: #1a1b1e;
+  --bg-tertiary: #232428;
+  --bg-elevated: #2b2d31;
+  --text: #f2f3f5;
+  --muted: #949ba4;
+  --danger: #ed4245;
+  --sidebar-w: 72px;
+  --channel-w: 240px;
+  --members-w: 240px;
+  --header-h: 48px;
+  --font: 'gg sans', 'Segoe UI', system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: var(--font);
+  background: var(--bg-deep);
+  color: var(--text);
+  height: 100vh;
+  overflow: hidden;
+}
+
+#root { height: 100%; }
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+input, textarea {
+  font-family: inherit;
+}
