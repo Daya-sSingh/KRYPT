@@ -1,22 +1,12 @@
 import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { b2Config } from './_env.mjs';
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'Content-Type',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
-
-function client() {
-  return new S3Client({
-    region: 'us-east-005',
-    endpoint: `https://${process.env.B2_ENDPOINT}`,
-    credentials: {
-      accessKeyId: process.env.B2_KEY_ID,
-      secretAccessKey: process.env.B2_APP_KEY,
-    },
-  });
-}
 
 export async function handler(event) {
   if (event.httpMethod === 'OPTIONS') {
@@ -29,12 +19,16 @@ export async function handler(event) {
 
   try {
     const body = JSON.parse(event.body || '{}');
-    const bucket = process.env.B2_BUCKET_NAME;
-    if (!bucket) {
+    const { bucket, endpoint, keyId, appKey } = b2Config();
+    if (!bucket || !endpoint || !keyId || !appKey) {
       return { statusCode: 500, headers: cors, body: 'B2 not configured' };
     }
 
-    const s3 = client();
+    const s3 = new S3Client({
+      region: 'us-east-005',
+      endpoint: `https://${endpoint}`,
+      credentials: { accessKeyId: keyId, secretAccessKey: appKey },
+    });
 
     if (body.download && body.key) {
       const cmd = new GetObjectCommand({ Bucket: bucket, Key: body.key });

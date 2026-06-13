@@ -10,6 +10,7 @@ interface ImportMetaEnv {
   readonly VITE_FIREBASE_APP_ID: string;
   readonly VITE_FIREBASE_MEASUREMENT_ID: string;
   readonly VITE_GIPHY_API_KEY: string;
+  readonly VITE_GIPHY_KEY: string;
   readonly VITE_LIVEKIT_URL: string;
 }
 

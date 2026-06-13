@@ -1,4 +1,5 @@
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { b2Config } from './_env.mjs';
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -21,8 +22,8 @@ export async function handler(event) {
       return { statusCode: 400, headers: cors, body: 'Missing file data' };
     }
 
-    const bucket = process.env.B2_BUCKET_NAME;
-    if (!bucket || !process.env.B2_ENDPOINT || !process.env.B2_KEY_ID || !process.env.B2_APP_KEY) {
+    const { bucket, endpoint, keyId, appKey } = b2Config();
+    if (!bucket || !endpoint || !keyId || !appKey) {
       return { statusCode: 500, headers: cors, body: 'B2 storage not configured on server' };
     }
 
@@ -31,11 +32,8 @@ export async function handler(event) {
 
     const s3 = new S3Client({
       region: 'us-east-005',
-      endpoint: `https://${process.env.B2_ENDPOINT}`,
-      credentials: {
-        accessKeyId: process.env.B2_KEY_ID,
-        secretAccessKey: process.env.B2_APP_KEY,
-      },
+      endpoint: `https://${endpoint}`,
+      credentials: { accessKeyId: keyId, secretAccessKey: appKey },
     });
 
     await s3.send(
