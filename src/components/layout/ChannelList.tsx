@@ -2,6 +2,7 @@ import { useApp } from '../../context/AppContext';
 import { signOut } from 'firebase/auth';
 import { auth } from '../../firebase/config';
 import { createChannel } from '../../firebase/servers';
+import { channelKey } from '../../lib/utils';
 import './ChannelList.css';
 
 export function ChannelList() {
@@ -14,7 +15,9 @@ export function ChannelList() {
     selectedChannelId,
     setSelectedChannelId,
     setCall,
+    call,
     setSettingsOpen,
+    unreadCounts,
   } = useApp();
 
   const server = servers.find((s) => s.id === selectedServerId);
@@ -29,7 +32,14 @@ export function ChannelList() {
   }
 
   function joinVoice(chId: string) {
-    setCall({ mode: 'group', serverId: selectedServerId!, channelId: chId, video: true });
+    if (call.mode && call.serverId === selectedServerId && call.channelId === chId) return;
+    setCall({
+      mode: 'group',
+      serverId: selectedServerId!,
+      channelId: chId,
+      video: true,
+      minimized: false,
+    });
   }
 
   return (
@@ -43,16 +53,27 @@ export function ChannelList() {
           <p className="section-label">TEXT CHANNELS</p>
           <button type="button" className="section-add" onClick={() => addChannel('text')}>+</button>
         </div>
-        {textChannels.map((ch) => (
-          <button
-            key={ch.id}
-            type="button"
-            className={`channel-item ${selectedChannelId === ch.id ? 'active' : ''}`}
-            onClick={() => setSelectedChannelId(ch.id)}
-          >
-            # {ch.name}
-          </button>
-        ))}
+        {textChannels.map((ch) => {
+          const key = channelKey(selectedServerId!, ch.id);
+          const unread = unreadCounts[key] || 0;
+          return (
+            <button
+              key={ch.id}
+              type="button"
+              className={[
+                'channel-item',
+                selectedChannelId === ch.id ? 'active' : '',
+                unread > 0 ? 'has-unread' : '',
+              ].filter(Boolean).join(' ')}
+              onClick={() => setSelectedChannelId(ch.id)}
+            >
+              <span># {ch.name}</span>
+              {unread > 0 && (
+                <span className="channel-badge">{unread > 99 ? '99+' : unread}</span>
+              )}
+            </button>
+          );
+        })}
       </div>
 
       <div className="channel-section">
@@ -60,16 +81,20 @@ export function ChannelList() {
           <p className="section-label">VOICE CHANNELS</p>
           <button type="button" className="section-add" onClick={() => addChannel('voice')}>+</button>
         </div>
-        {voiceChannels.map((ch) => (
-          <button
-            key={ch.id}
-            type="button"
-            className="channel-item voice"
-            onClick={() => joinVoice(ch.id)}
-          >
-            🔊 {ch.name}
-          </button>
-        ))}
+        {voiceChannels.map((ch) => {
+          const inThisCall =
+            call.mode && call.serverId === selectedServerId && call.channelId === ch.id;
+          return (
+            <button
+              key={ch.id}
+              type="button"
+              className={`channel-item voice ${inThisCall ? 'in-call' : ''}`}
+              onClick={() => joinVoice(ch.id)}
+            >
+              {inThisCall ? '📞' : '🔊'} {ch.name}
+            </button>
+          );
+        })}
       </div>
 
       <footer className="user-panel">

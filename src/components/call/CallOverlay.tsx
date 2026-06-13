@@ -7,36 +7,67 @@ import {
 } from 'livekit-client';
 import { useApp } from '../../context/AppContext';
 import { getLiveKitToken } from '../../lib/api';
+import { joinCallPresence, leaveCallPresence } from '../../firebase/callPresence';
 import './CallOverlay.css';
 
 const STUN = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
 
 export function CallOverlay() {
-  const { user, profile, call, setCall, channels, selectedServerId } = useApp();
+  const { user, profile, call, setCall, channels, selectedServerId, selectedChannelId } = useApp();
   const [status, setStatus] = useState('Connecting…');
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const roomRef = useRef<Room | null>(null);
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
+  const sessionKeyRef = useRef<string | null>(null);
+  const profileRef = useRef(profile);
+  profileRef.current = profile;
 
-  const channel = channels.find((c) => c.id === call.channelId);
-  const isVoiceChannel = channel?.type === 'voice';
-  const isGroup = call.mode === 'group' || isVoiceChannel;
+  const callChannel = channels.find((c) => c.id === call.channelId);
+  const isGroup = call.mode === 'group' || callChannel?.type === 'voice';
+  const onCallView =
+    call.mode &&
+    selectedServerId === call.serverId &&
+    selectedChannelId === call.channelId;
 
   useEffect(() => {
     if (!call.mode) return;
+    if (!onCallView) {
+      setCall((prev) => (prev.minimized ? prev : { ...prev, minimized: true }));
+    }
+  }, [call.mode, onCallView, selectedServerId, selectedChannelId, setCall]);
 
-    let stopped = false;
+  useEffect(() => {
+    if (!call.mode) {
+      const prev = sessionKeyRef.current;
+      if (prev) {
+        const [mode, serverId, channelId] = prev.split('|');
+        leaveCallPresence(serverId, channelId, user.uid).catch(() => {});
+      }
+      sessionKeyRef.current = null;
+      roomRef.current?.disconnect();
+      roomRef.current = null;
+      pcRef.current?.close();
+      pcRef.current = null;
+      localStreamRef.current?.getTracks().forEach((t) => t.stop());
+      localStreamRef.current = null;
+      return;
+    }
+
+    const sessionKey = `${call.mode}|${call.serverId}|${call.channelId}`;
+    if (sessionKeyRef.current === sessionKey) return;
+
+    sessionKeyRef.current = sessionKey;
+    let cancelled = false;
 
     async function startGroup() {
       try {
         const roomName = `${call.serverId}-${call.channelId}`;
-        const token = await getLiveKitToken(roomName, user.uid, profile.displayName);
-        const room = new Room({
-          adaptiveStream: false,
-          dynacast: false,
-        });
+        const token = await getLiveKitToken(roomName, user.uid, profileRef.current.displayName);
+        if (cancelled) return;
+
+        const room = new Room({ adaptiveStream: false, dynacast: false });
         roomRef.current = room;
 
         room.on(RoomEvent.TrackSubscribed, (track) => {
@@ -45,17 +76,20 @@ export function CallOverlay() {
           }
           if (track.kind === Track.Kind.Audio) {
             const el = track.attach() as HTMLAudioElement;
-            el.volume = Math.min(profile.settings.userVolume / 100, 5);
+            el.volume = Math.min(profileRef.current.settings.userVolume / 100, 5);
           }
         });
 
         const url = import.meta.env.VITE_LIVEKIT_URL;
         if (!url) throw new Error('VITE_LIVEKIT_URL not set');
         await room.connect(url, token);
+        if (cancelled) return;
+
+        await joinCallPresence(call.serverId, call.channelId, user.uid);
 
         const tracks = await createLocalTracks({
-          audio: profile.settings.audioInputId
-            ? { deviceId: profile.settings.audioInputId }
+          audio: profileRef.current.settings.audioInputId
+            ? { deviceId: profileRef.current.settings.audioInputId }
             : true,
           video: call.video,
         });
@@ -75,11 +109,13 @@ export function CallOverlay() {
     async function startDm() {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
-          audio: profile.settings.audioInputId
-            ? { deviceId: { exact: profile.settings.audioInputId } }
+          audio: profileRef.current.settings.audioInputId
+            ? { deviceId: { exact: profileRef.current.settings.audioInputId } }
             : true,
           video: call.video,
         });
+        if (cancelled) return;
+
         localStreamRef.current = stream;
         if (localVideoRef.current) localVideoRef.current.srcObject = stream;
 
@@ -90,18 +126,16 @@ export function CallOverlay() {
         pc.ontrack = (ev) => {
           if (remoteVideoRef.current) {
             remoteVideoRef.current.srcObject = ev.streams[0];
-            const audio = ev.streams[0].getAudioTracks()[0];
-            if (audio) {
-              const el = document.createElement('audio');
-              el.srcObject = ev.streams[0];
-              el.volume = Math.min(profile.settings.userVolume / 100, 5);
-              el.autoplay = true;
-              document.body.appendChild(el);
-            }
           }
+          const el = document.createElement('audio');
+          el.srcObject = ev.streams[0];
+          el.volume = Math.min(profileRef.current.settings.userVolume / 100, 5);
+          el.autoplay = true;
+          document.body.appendChild(el);
         };
 
-        setStatus('DM call active (invite peer via same channel)');
+        await joinCallPresence(call.serverId, call.channelId, user.uid);
+        setStatus('In call');
       } catch (e) {
         setStatus(e instanceof Error ? e.message : 'Call failed');
       }
@@ -111,12 +145,9 @@ export function CallOverlay() {
     else startDm();
 
     return () => {
-      stopped = true;
-      roomRef.current?.disconnect();
-      pcRef.current?.close();
-      localStreamRef.current?.getTracks().forEach((t) => t.stop());
+      cancelled = true;
     };
-  }, [call, user.uid, profile, isGroup]);
+  }, [call.mode, call.serverId, call.channelId, call.video, isGroup, user.uid]);
 
   async function shareScreen() {
     try {
@@ -149,19 +180,49 @@ export function CallOverlay() {
   }
 
   function endCall() {
+    if (call.serverId && call.channelId) {
+      leaveCallPresence(call.serverId, call.channelId, user.uid).catch(() => {});
+    }
     roomRef.current?.disconnect();
+    roomRef.current = null;
     pcRef.current?.close();
+    pcRef.current = null;
     localStreamRef.current?.getTracks().forEach((t) => t.stop());
-    setCall({ mode: null, channelId: '', serverId: '' });
+    localStreamRef.current = null;
+    sessionKeyRef.current = null;
+    setCall({ mode: null, channelId: '', serverId: '', video: false, minimized: false });
   }
 
   if (!call.mode) return null;
+
+  if (call.minimized) {
+    return (
+      <div className="call-bar">
+        <span className="call-bar-status">📞 {isGroup ? 'Group call' : 'Call'} — {status}</span>
+        <div className="call-bar-actions">
+          <button
+            type="button"
+            onClick={() => setCall((prev) => ({ ...prev, minimized: false }))}
+          >
+            Expand
+          </button>
+          <button type="button" onClick={shareScreen}>Share</button>
+          <button type="button" className="danger" onClick={endCall}>Leave</button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="call-overlay">
       <header>
         <span>{isGroup ? 'Group call' : 'Direct call'} — {status}</span>
-        <button type="button" onClick={endCall}>Leave</button>
+        <div>
+          <button type="button" onClick={() => setCall((prev) => ({ ...prev, minimized: true }))}>
+            Minimize
+          </button>
+          <button type="button" onClick={endCall}>Leave</button>
+        </div>
       </header>
       <div className="call-videos">
         <video ref={localVideoRef} autoPlay muted playsInline className="local" />

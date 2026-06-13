@@ -1,31 +1,44 @@
-export async function getLiveKitToken(room: string, identity: string, name: string): Promise<string> {
-  const res = await fetch('/.netlify/functions/livekit-token', {
+const API = '/.netlify/functions';
+
+async function apiFetch(path: string, body: object) {
+  const res = await fetch(`${API}/${path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ room, identity, name }),
+    body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error(await res.text());
-  const data = await res.json();
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(text || `Upload service error (${res.status})`);
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(text || 'Invalid server response');
+  }
+}
+
+export async function getLiveKitToken(room: string, identity: string, name: string): Promise<string> {
+  const data = await apiFetch('livekit-token', { room, identity, name });
   return data.token as string;
 }
 
-export async function getB2UploadUrl(fileName: string, contentType: string): Promise<{ uploadUrl: string; key: string }> {
-  const res = await fetch('/.netlify/functions/b2-presign', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ fileName, contentType }),
-  });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
+/** Upload encrypted bytes through Netlify (avoids B2 CORS / network errors in browser). */
+export async function uploadEncryptedFile(
+  fileName: string,
+  contentType: string,
+  data: ArrayBuffer,
+): Promise<{ key: string }> {
+  const bytes = new Uint8Array(data);
+  let binary = '';
+  const chunk = 8192;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  const b64 = btoa(binary);
+  return apiFetch('b2-upload', { fileName, contentType, data: b64 });
 }
 
 export async function getB2DownloadUrl(key: string): Promise<string> {
-  const res = await fetch('/.netlify/functions/b2-presign', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ key, download: true }),
-  });
-  if (!res.ok) throw new Error(await res.text());
-  const data = await res.json();
+  const data = await apiFetch('b2-presign', { key, download: true });
   return data.downloadUrl as string;
 }

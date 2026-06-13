@@ -5,10 +5,11 @@ import { ChatArea } from './ChatArea';
 import { MembersPanel } from './MembersPanel';
 import { SettingsModal } from '../settings/SettingsModal';
 import { CallOverlay } from '../call/CallOverlay';
+import { MessageToasts } from '../notifications/MessageToasts';
 import './AppShell.css';
 
 export function AppShell() {
-  const { channels, selectedChannelId, setCall, selectedServerId } = useApp();
+  const { channels, selectedChannelId, setCall, selectedServerId, call } = useApp();
   const channel = channels.find((c) => c.id === selectedChannelId);
 
   return (
@@ -22,30 +23,34 @@ export function AppShell() {
             <button
               type="button"
               title="Voice call"
-              onClick={() =>
-                channel &&
+              onClick={() => {
+                if (!channel || !selectedServerId) return;
+                if (call.mode) return;
                 setCall({
                   mode: 'dm',
-                  serverId: selectedServerId!,
+                  serverId: selectedServerId,
                   channelId: channel.id,
                   video: false,
-                })
-              }
+                  minimized: false,
+                });
+              }}
             >
               📞
             </button>
             <button
               type="button"
               title="Video call"
-              onClick={() =>
-                channel &&
+              onClick={() => {
+                if (!channel || !selectedServerId) return;
+                if (call.mode) return;
                 setCall({
                   mode: 'dm',
-                  serverId: selectedServerId!,
+                  serverId: selectedServerId,
                   channelId: channel.id,
                   video: true,
-                })
-              }
+                  minimized: false,
+                });
+              }}
             >
               📹
             </button>
@@ -56,6 +61,7 @@ export function AppShell() {
       <MembersPanel />
       <SettingsModal />
       <CallOverlay />
+      <MessageToasts />
     </div>
   );
 }

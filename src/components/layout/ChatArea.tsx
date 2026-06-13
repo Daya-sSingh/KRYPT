@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { sendEncryptedMessage, subscribeMessages } from '../../firebase/messages';
-import { encryptBytes } from '../../crypto/aes';
+import { encryptBytes, decryptBytes } from '../../crypto/aes';
 import { getChannelAesKey } from '../../crypto/channelKeys';
 import { getMemberPublicKeys } from '../../firebase/users';
-import { getB2DownloadUrl, getB2UploadUrl } from '../../lib/api';
+import { getB2DownloadUrl, uploadEncryptedFile } from '../../lib/api';
+import { isGifFile, saveGifFromBlob, saveGifFromUrl } from '../../lib/utils';
 import { GifPicker } from '../chat/GifPicker';
 import type { ChatMessage } from '../../types';
 import './ChatArea.css';
@@ -15,6 +16,7 @@ export function ChatArea() {
   const [draft, setDraft] = useState('');
   const [gifOpen, setGifOpen] = useState(false);
   const [sending, setSending] = useState(false);
+  const [uploadError, setUploadError] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const server = servers.find((s) => s.id === selectedServerId);
@@ -78,6 +80,7 @@ export function ChatArea() {
 
   async function uploadFile(file: File) {
     setSending(true);
+    setUploadError('');
     try {
       const publicKeys = await getMemberPublicKeys(server!.memberIds);
       const aesKey = await getChannelAesKey(
@@ -87,23 +90,34 @@ export function ChatArea() {
         user.uid,
       );
       const encrypted = await encryptBytes(aesKey, await file.arrayBuffer());
-      const blob = new Blob([encrypted], { type: 'application/octet-stream' });
       const encName = `${Date.now()}-${file.name}.enc`;
 
-      const { uploadUrl, key } = await getB2UploadUrl(encName, 'application/octet-stream');
-      await fetch(uploadUrl, { method: 'PUT', body: blob, headers: { 'Content-Type': 'application/octet-stream' } });
+      const { key } = await uploadEncryptedFile(encName, 'application/octet-stream', encrypted);
+
+      const isGif = isGifFile(file);
 
       await sendEncryptedMessage(
         selectedServerId!,
         selectedChannelId!,
         user.uid,
         server!.memberIds,
-        'file',
-        { fileName: file.name, fileUrl: key, mime: file.type, text: file.name },
+        isGif ? 'gif' : 'file',
+        {
+          fileName: file.name,
+          fileUrl: key,
+          mime: file.type,
+          text: isGif ? '' : file.name,
+          gifUrl: isGif ? `b2://${key}` : undefined,
+        },
         profile.settings.messageExpiry,
       );
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Upload failed');
+      const msg = err instanceof Error ? err.message : 'Upload failed';
+      setUploadError(
+        msg.includes('Failed to fetch') || msg.includes('network')
+          ? 'File upload failed — check Netlify env vars (B2 keys) and redeploy.'
+          : msg,
+      );
     } finally {
       setSending(false);
     }
@@ -117,11 +131,20 @@ export function ChatArea() {
           <p>Messages are encrypted on your device. Server only stores ciphertext.</p>
         </div>
         {messages.map((m) => (
-          <MessageBubble key={m.id} message={m} isOwn={m.senderId === user.uid} />
+          <MessageBubble
+            key={m.id}
+            message={m}
+            isOwn={m.senderId === user.uid}
+            serverId={selectedServerId!}
+            channelId={selectedChannelId!}
+            memberIds={server.memberIds}
+            myUid={user.uid}
+          />
         ))}
         <div ref={bottomRef} />
       </div>
 
+      {uploadError && <p className="upload-error">{uploadError}</p>}
       {gifOpen && <GifPicker onSelect={sendGif} onClose={() => setGifOpen(false)} />}
 
       <form
@@ -136,7 +159,7 @@ export function ChatArea() {
           <input
             type="file"
             hidden
-            accept="image/*,audio/*,video/*,.pdf,.zip"
+            accept="image/*,audio/*,video/*,.gif,.pdf,.zip"
             onChange={(e) => {
               const f = e.target.files?.[0];
               if (f) uploadFile(f);
@@ -159,22 +182,97 @@ export function ChatArea() {
   );
 }
 
-function MessageBubble({ message, isOwn }: { message: ChatMessage; isOwn: boolean }) {
+function MessageBubble({
+  message,
+  isOwn,
+  serverId,
+  channelId,
+  memberIds,
+  myUid,
+}: {
+  message: ChatMessage;
+  isOwn: boolean;
+  serverId: string;
+  channelId: string;
+  memberIds: string[];
+  myUid: string;
+}) {
   const [fileLink, setFileLink] = useState<string | null>(null);
+  const [gifBlobUrl, setGifBlobUrl] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const isUploadedGif =
+    message.type === 'gif' && message.fileUrl && message.gifUrl?.startsWith('b2://');
+  const isGiphyGif = message.type === 'gif' && message.gifUrl && !message.gifUrl.startsWith('b2://');
 
   useEffect(() => {
-    if (message.type === 'file' && message.fileUrl) {
-      getB2DownloadUrl(message.fileUrl).then(setFileLink).catch(() => {});
+    let revoked: string | null = null;
+
+    async function loadFile() {
+      if (message.type !== 'file' && !isUploadedGif) return;
+      if (!message.fileUrl) return;
+      try {
+        const url = await getB2DownloadUrl(message.fileUrl);
+        if (isUploadedGif) {
+          const res = await fetch(url);
+          const encBuf = await res.arrayBuffer();
+          const publicKeys = await getMemberPublicKeys(memberIds);
+          const aesKey = await getChannelAesKey(serverId, channelId, publicKeys, myUid);
+          const dec = await decryptBytes(aesKey, encBuf);
+          const blob = new Blob([dec], { type: 'image/gif' });
+          const objUrl = URL.createObjectURL(blob);
+          revoked = objUrl;
+          setGifBlobUrl(objUrl);
+        } else {
+          setFileLink(url);
+        }
+      } catch {
+        setFileLink(null);
+      }
     }
-  }, [message]);
+
+    loadFile();
+    return () => {
+      if (revoked) URL.revokeObjectURL(revoked);
+    };
+  }, [message.id, message.fileUrl, isUploadedGif, serverId, channelId, memberIds, myUid, message.type]);
+
+  async function saveGif() {
+    setSaving(true);
+    try {
+      if (isGiphyGif && message.gifUrl) {
+        await saveGifFromUrl(message.gifUrl, message.fileName || 'krypt-gif.gif');
+      } else if (gifBlobUrl) {
+        const res = await fetch(gifBlobUrl);
+        await saveGifFromBlob(await res.blob(), message.fileName || 'krypt-gif.gif');
+      }
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Could not save GIF');
+    } finally {
+      setSaving(false);
+    }
+  }
 
   return (
     <div className={`message ${isOwn ? 'own' : ''}`}>
       <div className="message-body">
-        {message.type === 'gif' && message.gifUrl && (
-          <img src={message.gifUrl} alt="GIF" className="msg-gif" />
+        {isGiphyGif && message.gifUrl && (
+          <>
+            <img src={message.gifUrl} alt="GIF" className="msg-gif" />
+            <button type="button" className="save-gif-btn" onClick={saveGif} disabled={saving}>
+              {saving ? 'Saving…' : 'Save GIF'}
+            </button>
+          </>
         )}
-        {message.type === 'file' && (
+        {isUploadedGif && gifBlobUrl && (
+          <>
+            <img src={gifBlobUrl} alt="GIF" className="msg-gif" />
+            <button type="button" className="save-gif-btn" onClick={saveGif} disabled={saving}>
+              {saving ? 'Saving…' : 'Save GIF'}
+            </button>
+          </>
+        )}
+        {message.type === 'file' && !isUploadedGif && (
           <p>
             📎 {message.fileName}{' '}
             {fileLink && (

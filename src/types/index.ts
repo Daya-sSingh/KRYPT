@@ -55,6 +55,16 @@ export interface CallState {
   serverId: string;
   withUserId?: string;
   video: boolean;
+  minimized?: boolean;
+}
+
+export interface MessageToast {
+  id: string;
+  serverId: string;
+  channelId: string;
+  channelName: string;
+  senderId: string;
+  preview: string;
 }
 
 export const DEFAULT_SETTINGS: UserSettings = {

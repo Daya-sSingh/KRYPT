@@ -31,6 +31,29 @@
   background: var(--bg-secondary);
   color: var(--text);
   font-weight: 700;
+  position: relative;
+}
+
+.rail-pill.has-unread:not(.active) {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.rail-badge {
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 3px;
+  border-radius: 8px;
+  background: #000;
+  color: #fff;
+  font-size: 0.6rem;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--bg-deep);
 }
 
 .rail-pill.active,
