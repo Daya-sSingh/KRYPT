@@ -1,0 +1,85 @@
+.sidebar {
+  width: var(--sidebar-width);
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 12px 0;
+  gap: 8px;
+  flex-shrink: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.serverBtn {
+  position: relative;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-radius var(--transition), background var(--transition), color var(--transition);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.serverBtn::before {
+  content: '';
+  position: absolute;
+  left: -4px;
+  top: 50%;
+  transform: translateY(-50%) scaleY(0);
+  width: 4px;
+  height: 20px;
+  background: var(--primary);
+  border-radius: 0 2px 2px 0;
+  transition: transform var(--transition), height var(--transition);
+}
+
+.serverBtn:hover,
+.serverBtn.active {
+  border-radius: 14px;
+  background: var(--primary);
+  color: #000;
+}
+
+.serverBtn.active::before {
+  transform: translateY(-50%) scaleY(1);
+  height: 36px;
+}
+
+.serverBtn:hover::before {
+  transform: translateY(-50%) scaleY(1);
+}
+
+.serverBtn img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.serverInitial {
+  font-size: 18px;
+  font-weight: 700;
+  color: inherit;
+}
+
+.addBtn {
+  background: var(--surface2);
+  color: var(--primary);
+}
+
+.addBtn:hover {
+  background: var(--primary);
+  color: #000;
+}
+
+.divider {
+  width: 32px;
+  height: 1px;
+  background: var(--border-bright);
+  flex-shrink: 0;
+}
