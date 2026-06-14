@@ -17,7 +17,7 @@ import {
   deleteDoc,
 } from 'firebase/firestore';
 import { auth, db } from './firebase';
-import { initUserKeys, getPrivateKey } from '../crypto/crypto';
+import { initUserKeys, getPrivateKey, exportEncryptedPrivateKey, importEncryptedPrivateKey } from '../crypto/crypto';
 
 const ACTION_CODE_SETTINGS = {
   url:             window.location.origin + '/auth/email-callback',
@@ -199,4 +199,24 @@ export async function getFriendRequests(uid) {
   const q    = query(collection(db, 'friendRequests'), where('to', '==', uid), where('status', '==', 'pending'));
   const snap = await getDocs(q);
   return snap.docs.map(d => d.data());
+}
+
+
+export async function saveKeyBackup(uid, password) {
+  const blob = await exportEncryptedPrivateKey(uid, password);
+  await setDoc(doc(db, 'keyBackups', uid), {
+    encryptedKey: blob,
+    updatedAt:    serverTimestamp(),
+  });
+}
+
+export async function restoreKeyBackup(uid, password) {
+  const snap = await getDoc(doc(db, 'keyBackups', uid));
+  if (!snap.exists()) throw new Error('No backup found for this account');
+  await importEncryptedPrivateKey(uid, password, snap.data().encryptedKey);
+}
+
+export async function hasKeyBackup(uid) {
+  const snap = await getDoc(doc(db, 'keyBackups', uid));
+  return snap.exists();
 }

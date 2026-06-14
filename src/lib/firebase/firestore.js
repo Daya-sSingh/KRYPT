@@ -184,12 +184,43 @@ export function listenMessages(effectiveId, uid, callback) {
 
   return onSnapshot(q, async snap => {
     // Get AES key from base conversation
-    let aesKey = null;
+   let aesKey = null;
     try {
       const privKey  = await getPrivateKey(uid);
       const convSnap = await getDoc(doc(db, 'conversations', baseConvId));
-      const encKey   = convSnap.data()?.encryptedKeys?.[uid];
-      if (privKey && encKey) aesKey = await decryptAESKey(encKey, privKey);
+      const convData = convSnap.data();
+      const encKey   = convData?.encryptedKeys?.[uid];
+      if (privKey && encKey) {
+        try {
+          aesKey = await decryptAESKey(encKey, privKey);
+        } catch {
+          console.warn('AES key mismatch — attempting auto-repair...');
+          try {
+            const members = convData?.members || [];
+            const otherMembers = members.filter(m => m !== uid);
+            for (const memberId of otherMembers) {
+              const memberEncKey  = convData?.encryptedKeys?.[memberId];
+              const memberPrivKey = await getPrivateKey(memberId).catch(() => null);
+              if (memberPrivKey && memberEncKey) {
+                const recoveredAesKey = await decryptAESKey(memberEncKey, memberPrivKey);
+                const myPubKeySnap    = await getDoc(doc(db, 'publicKeys', uid));
+                if (myPubKeySnap.exists()) {
+                  const myPubKey  = myPubKeySnap.data().key;
+                  const newEncKey = await encryptAESKeyForUser(recoveredAesKey, myPubKey);
+                  await updateDoc(doc(db, 'conversations', baseConvId), {
+                    [`encryptedKeys.${uid}`]: newEncKey
+                  });
+                  aesKey = recoveredAesKey;
+                  console.log('Auto-repair successful!');
+                }
+                break;
+              }
+            }
+          } catch(repairErr) {
+            console.warn('Auto-repair failed:', repairErr);
+          }
+        }
+      }
     } catch(err) {
       console.warn('Could not load AES key:', err);
     }
