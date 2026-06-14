@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
-import { logout, updateUserProfile } from '../../lib/firebase/auth';
+import { logout, updateUserProfile, saveKeyBackup, restoreKeyBackup, hasKeyBackup } from '../../lib/firebase/auth';
 import { useNavigate } from 'react-router-dom';
 import ImageCropper from '../UI/ImageCropper';
 
