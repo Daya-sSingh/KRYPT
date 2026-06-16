@@ -53,9 +53,11 @@ export function NotificationProvider({ children, activeConvId }) {
             senderName  = prof?.displayName || 'Someone';
             senderPhoto = prof?.photoURL || null;
           } catch {}
-          const preview = data.content
-            ? (data.content.length > 60 ? data.content.slice(0, 60) + '...' : data.content)
-            : data.type === 'gif' ? '🎬 GIF' : data.type === 'image' ? '🖼 Image' : data.type === 'file' ? '📎 File' : '...';
+          const preview = data.type === 'gif' ? '🎬 GIF'
+            : data.type === 'image' ? '🖼 Image'
+            : data.type === 'file' ? `📎 ${data.fileName || 'File'}`
+            : data.plaintext ? (data.plaintext.length > 60 ? data.plaintext.slice(0, 60) + '...' : data.plaintext)
+            : '💬 New message';
           addToast({ senderName, senderPhoto, preview, convId: conv.id });
         });
         convUnsubs.push(unsub);
