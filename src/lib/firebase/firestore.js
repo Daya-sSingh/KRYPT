@@ -131,7 +131,7 @@ export async function sendMessage(effectiveId, senderId, content, type = 'text',
       const aesKey = await decryptAESKey(encKey, privKey);
       if (type === 'text') {
         encrypted = await encryptMessage(content, aesKey);
-      } else {
+      } else if (type !== 'gif') {
         encrypted = await encryptMessage(JSON.stringify({ url: content, ...meta }), aesKey);
       }
     }
@@ -152,6 +152,7 @@ export async function sendMessage(effectiveId, senderId, content, type = 'text',
     iv:         encrypted?.iv         || null,
     ciphertext: encrypted?.ciphertext || null,
     plaintext:  encrypted ? null : (type === 'text' ? content : null),
+    gifUrl:     type === 'gif' ? content : null,
     timestamp:  serverTimestamp(),
     readBy:     [senderId],
     expiresAt,
