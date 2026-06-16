@@ -17,49 +17,35 @@ export async function uploadFile(file, aesKey, onProgress) {
     }
   }
 
-  // Get upload URL from Netlify function
-  const urlRes = await fetch('/.netlify/functions/b2-upload-url', {
+  const fileName = `${uuidv4()}.enc`;
+
+  // Simulate progress start
+  if (onProgress) onProgress(0.05);
+
+  // Convert to base64 to send through Netlify function (avoids CORS)
+  const base64 = btoa(String.fromCharCode(...new Uint8Array(uploadBuffer)));
+
+  if (onProgress) onProgress(0.2);
+
+  const res = await fetch('/.netlify/functions/b2-upload', {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ fileName: `${uuidv4()}.enc` }),
+    body:    JSON.stringify({
+      fileData: base64,
+      fileName,
+      mimeType: 'application/octet-stream',
+    }),
   });
 
-  if (!urlRes.ok) {
-    const err = await urlRes.text();
-    throw new Error('Failed to get upload URL: ' + err);
+  if (onProgress) onProgress(0.9);
+
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error('Upload failed: ' + err);
   }
 
-  const { uploadUrl, authToken, fileName } = await urlRes.json();
-
-  if (!uploadUrl || !authToken) {
-    throw new Error('Invalid upload URL response');
-  }
-
-  // Upload the blob
-  const blob = new Blob([uploadBuffer]);
-  await new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', uploadUrl);
-    xhr.setRequestHeader('Authorization', authToken);
-    xhr.setRequestHeader('X-Bz-File-Name', encodeURIComponent(fileName));
-    xhr.setRequestHeader('Content-Type', 'application/octet-stream');
-    xhr.setRequestHeader('X-Bz-Content-Sha1', 'do_not_verify');
-    xhr.setRequestHeader('Content-Length', blob.size.toString());
-    if (onProgress) {
-      xhr.upload.onprogress = e => {
-        if (e.lengthComputable) onProgress(e.loaded / e.total);
-      };
-    }
-    xhr.onload = () => {
-      if (xhr.status === 200) {
-        resolve();
-      } else {
-        reject(new Error(`Upload failed: ${xhr.status} ${xhr.responseText}`));
-      }
-    };
-    xhr.onerror = () => reject(new Error('Network error during upload'));
-    xhr.send(blob);
-  });
+  await res.json();
+  if (onProgress) onProgress(1);
 
   return {
     fileName,

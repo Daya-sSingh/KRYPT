@@ -186,6 +186,9 @@ export async function hasKeys(userId) {
 }
 
 
+// ─── Password-Protected Key Backup ───────────────────────────────────────────
+
+// Derive an AES key from a user password using PBKDF2
 async function deriveKeyFromPassword(password, salt) {
   const enc = new TextEncoder();
   const keyMaterial = await crypto.subtle.importKey(
@@ -200,14 +203,18 @@ async function deriveKeyFromPassword(password, salt) {
   );
 }
 
+// Encrypt private key with password → returns base64 blob to store in Firestore
 export async function exportEncryptedPrivateKey(userId, password) {
   const db    = await getKeyDB();
   const pkcs8 = await db.get(DB_STORE, userId);
   if (!pkcs8) throw new Error('No private key found on this device');
+
   const salt      = crypto.getRandomValues(new Uint8Array(16));
   const iv        = crypto.getRandomValues(new Uint8Array(12));
   const aesKey    = await deriveKeyFromPassword(password, salt);
   const encrypted = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, aesKey, pkcs8);
+
+  // Pack: [salt(16)] + [iv(12)] + [ciphertext]
   const out = new Uint8Array(16 + 12 + encrypted.byteLength);
   out.set(salt, 0);
   out.set(iv, 16);
@@ -215,25 +222,28 @@ export async function exportEncryptedPrivateKey(userId, password) {
   return btoa(String.fromCharCode(...out));
 }
 
+// Decrypt backup blob with password → restore private key to IndexedDB
 export async function importEncryptedPrivateKey(userId, password, base64Blob) {
   const raw  = Uint8Array.from(atob(base64Blob), c => c.charCodeAt(0));
   const salt = raw.slice(0, 16);
   const iv   = raw.slice(16, 28);
   const ct   = raw.slice(28);
-  const aesKey = await deriveKeyFromPassword(password, salt);
+
+  const aesKey  = await deriveKeyFromPassword(password, salt);
   let pkcs8;
   try {
     pkcs8 = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, aesKey, ct);
   } catch {
     throw new Error('Wrong password');
   }
+
+  // Validate it's a real RSA key before storing
   await crypto.subtle.importKey(
     'pkcs8', pkcs8,
     { name: 'RSA-OAEP', hash: 'SHA-256' },
     false, ['decrypt']
   );
+
   const db = await getKeyDB();
   await db.put(DB_STORE, pkcs8, userId);
 }
-
-

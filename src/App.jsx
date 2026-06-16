@@ -2,6 +2,7 @@ import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
+import { CallProvider } from './context/CallContext';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import EmailCallbackPage from './pages/EmailCallbackPage';
@@ -29,6 +30,7 @@ export default function App() {
   return (
     <ThemeProvider>
       <AuthProvider>
+        <CallProvider>
         <BrowserRouter>
           <Routes>
             <Route path="/login"               element={<PublicRoute><LoginPage /></PublicRoute>} />
@@ -38,6 +40,7 @@ export default function App() {
             <Route path="*"                    element={<Navigate to="/app" replace />} />
           </Routes>
         </BrowserRouter>
+        </CallProvider>
       </AuthProvider>
     </ThemeProvider>
   );

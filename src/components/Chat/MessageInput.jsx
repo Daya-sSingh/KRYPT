@@ -1,7 +1,6 @@
 import React, { useRef, useState, useCallback, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { GiphyFetch } from '@giphy/js-fetch-api';
-import { Grid } from '@giphy/react-components';
 import EmojiPicker from 'emoji-picker-react';
 import { getDoc, doc } from 'firebase/firestore';
 import { db } from '../../lib/firebase/firebase';
@@ -9,32 +8,140 @@ import { decryptAESKey } from '../../lib/crypto/crypto';
 import { getPrivateKey } from '../../lib/crypto/crypto';
 
 const GIPHY_KEY = import.meta.env.VITE_GIPHY_KEY;
+const GIF_CATEGORIES = [
+  { id: 'happy',     label: '😄 Happy',     query: 'happy' },
+  { id: 'sad',       label: '😢 Sad',       query: 'sad' },
+  { id: 'funny',     label: '😂 Funny',     query: 'funny' },
+  { id: 'love',      label: '❤️ Love',      query: 'love' },
+  { id: 'angry',     label: '😡 Angry',     query: 'angry' },
+  { id: 'celebrate', label: '🎉 Celebrate', query: 'celebrate' },
+  { id: 'trending',  label: '🔥 Trending',  query: null },
+];
+
+function useFavouriteGifs() {
+  const [favs, setFavs] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('krypt_fav_gifs') || '[]'); } catch { return []; }
+  });
+  function toggleFav(gif) {
+    setFavs(prev => {
+      const exists = prev.find(g => g.id === gif.id);
+      const next = exists ? prev.filter(g => g.id !== gif.id) : [{ id: gif.id, url: gif.images.original.url, preview: gif.images.fixed_height_small?.url || gif.images.original.url }, ...prev].slice(0, 50);
+      localStorage.setItem('krypt_fav_gifs', JSON.stringify(next));
+      return next;
+    });
+  }
+  function isFav(gifId) { return favs.some(g => g.id === gifId); }
+  return { favs, toggleFav, isFav };
+}
+
+function GifGrid({ gifs, onSelect, onFav, isFav }) {
+  const [hovered, setHovered] = useState(null);
+  if (!gifs.length) return <div style={{ padding:'20px 0', textAlign:'center', color:'var(--text-faint)', fontSize:13 }}>No GIFs found</div>;
+  return (
+    <div style={{ display:'grid', gridTemplateColumns:'repeat(2,1fr)', gap:4 }}>
+      {gifs.map(gif => (
+        <div key={gif.id} style={{ position:'relative', borderRadius:6, overflow:'hidden', cursor:'pointer', aspectRatio:'16/9', background:'var(--surface)' }}
+          onMouseEnter={() => setHovered(gif.id)}
+          onMouseLeave={() => setHovered(null)}
+          onClick={() => onSelect(gif.images.original.url)}>
+          <img src={gif.images.fixed_height_small?.url || gif.images.original.url} alt={gif.title}
+            style={{ width:'100%', height:'100%', objectFit:'cover', display:'block' }} />
+          {hovered === gif.id && (
+            <button
+              onClick={e => { e.stopPropagation(); onFav(gif); }}
+              title={isFav(gif.id) ? 'Remove from favourites' : 'Add to favourites'}
+              style={{ position:'absolute', top:4, left:4, background:'rgba(0,0,0,0.7)', border:'none', borderRadius:6, cursor:'pointer', fontSize:14, padding:'3px 6px', color: isFav(gif.id) ? '#ff4444' : '#fff', lineHeight:1 }}>
+              {isFav(gif.id) ? '♥' : '♡'}
+            </button>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function GifMenu({ onSelect, onClose }) {
+  const [search,   setSearch]   = useState('');
+  const [category, setCategory] = useState('trending');
+  const [gifs,     setGifs]     = useState([]);
+  const [loading,  setLoading]  = useState(false);
+  const { favs, toggleFav, isFav } = useFavouriteGifs();
+  const [gf] = useState(() => GIPHY_KEY ? new GiphyFetch(GIPHY_KEY) : null);
+
+  useEffect(() => {
+    if (!gf) return;
+    if (category === 'favourites') return;
+    setLoading(true);
+    const cat = GIF_CATEGORIES.find(c => c.id === category);
+    const promise = search
+      ? gf.search(search, { limit: 12 })
+      : cat?.query ? gf.search(cat.query, { limit: 12 }) : gf.trending({ limit: 12 });
+    promise.then(res => { setGifs(res.data); setLoading(false); }).catch(() => setLoading(false));
+  }, [gf, category, search]);
+
+  const displayedGifs = category === 'favourites' ? null : gifs;
+
+  return (
+    <div style={{ position:'fixed', bottom:80, right:24, zIndex:200, background:'var(--elevated)', border:'1px solid var(--border)', borderRadius:14, width:340, maxHeight:480, display:'flex', flexDirection:'column', boxShadow:'0 8px 32px rgba(0,0,0,0.5)', overflow:'hidden' }}>
+      {/* Search */}
+      <div style={{ padding:'10px 10px 6px' }}>
+        <input className="krypt-input" placeholder="Search GIFs..." value={search}
+          onChange={e => { setSearch(e.target.value); setCategory('trending'); }}
+          autoFocus style={{ fontSize:13, width:'100%', boxSizing:'border-box' }} />
+      </div>
+
+      {/* Category rows — 2 per row */}
+      <div style={{ padding:'0 10px 6px', display:'grid', gridTemplateColumns:'1fr 1fr', gap:4 }}>
+        <button onClick={() => { setCategory('favourites'); setSearch(''); }}
+          style={{ ...catBtn, background: category==='favourites' ? 'var(--accent)' : 'var(--surface)', color: category==='favourites' ? '#000' : 'var(--text-muted)' }}>
+          ⭐ Favourites
+        </button>
+        {GIF_CATEGORIES.map(cat => (
+          <button key={cat.id} onClick={() => { setCategory(cat.id); setSearch(''); }}
+            style={{ ...catBtn, background: category===cat.id ? 'var(--accent)' : 'var(--surface)', color: category===cat.id ? '#000' : 'var(--text-muted)' }}>
+            {cat.label}
+          </button>
+        ))}
+      </div>
+
+      {/* GIF grid */}
+      <div style={{ flex:1, overflowY:'auto', padding:'0 10px 10px' }}>
+        {category === 'favourites' ? (
+          favs.length === 0
+            ? <div style={{ padding:'20px 0', textAlign:'center', color:'var(--text-faint)', fontSize:13 }}>No favourites yet.<br/>Hover a GIF and click ♡ to save it.</div>
+            : <div style={{ display:'grid', gridTemplateColumns:'repeat(2,1fr)', gap:4 }}>
+                {favs.map(gif => (
+                  <div key={gif.id} style={{ position:'relative', borderRadius:6, overflow:'hidden', cursor:'pointer', aspectRatio:'16/9', background:'var(--surface)' }}
+                    onClick={() => onSelect(gif.url)}>
+                    <img src={gif.preview} alt="" style={{ width:'100%', height:'100%', objectFit:'cover', display:'block' }} />
+                    <button
+                      onClick={e => { e.stopPropagation(); toggleFav(gif); }}
+                      style={{ position:'absolute', top:4, left:4, background:'rgba(0,0,0,0.7)', border:'none', borderRadius:6, cursor:'pointer', fontSize:14, padding:'3px 6px', color:'#ff4444', lineHeight:1 }}>♥</button>
+                  </div>
+                ))}
+              </div>
+        ) : loading ? (
+          <div style={{ padding:'20px 0', textAlign:'center', color:'var(--text-faint)', fontSize:13 }}>Loading...</div>
+        ) : (
+          <GifGrid gifs={displayedGifs || []} onSelect={onSelect} onFav={toggleFav} isFav={isFav} />
+        )}
+      </div>
+      <div style={{ padding:'4px 10px 8px', fontSize:10, color:'var(--text-faint)', textAlign:'right' }}>Powered by GIPHY</div>
+    </div>
+  );
+}
+
+const catBtn = { border:'none', borderRadius:6, cursor:'pointer', fontSize:11, fontWeight:600, padding:'5px 8px', textAlign:'left', transition:'all 0.1s' };
 
 export default function MessageInput({ convId, onSend, onTyping, placeholder }) {
   const { user } = useAuth();
   const [text, setText]           = useState('');
   const [showGiphy, setShowGiphy] = useState(false);
   const [showEmoji, setShowEmoji] = useState(false);
-  const [gifSearch, setGifSearch] = useState('');
   const [uploading, setUploading] = useState(false);
   const [uploadProg, setUploadProg] = useState(0);
-  const [gf, setGf]               = useState(null);
-  const [giphyError, setGiphyError] = useState(false);
   const fileRef     = useRef();
   const typingTimer = useRef(null);
-
-  useEffect(() => {
-    if (GIPHY_KEY) {
-      setGf(new GiphyFetch(GIPHY_KEY));
-    }
-  }, []);
-
-  const fetchGifs = useCallback((offset) => {
-    if (!gf) return Promise.resolve({ data: [] });
-    return gifSearch
-      ? gf.search(gifSearch, { offset, limit: 10 })
-      : gf.trending({ offset, limit: 10 });
-  }, [gf, gifSearch]);
 
   function handleTextChange(e) {
     setText(e.target.value);
@@ -55,9 +162,9 @@ export default function MessageInput({ convId, onSend, onTyping, placeholder }) 
     clearTimeout(typingTimer.current);
   }
 
-  async function handleGifSelect(gif) {
-    await onSend(gif.images.original.url, 'gif');
-    setShowGiphy(false); setGifSearch('');
+  async function handleGifSelect(url) {
+    await onSend(url, 'gif');
+    setShowGiphy(false);
   }
 
   function handleEmojiSelect(d) { setText(t => t + d.emoji); setShowEmoji(false); }
@@ -65,17 +172,10 @@ export default function MessageInput({ convId, onSend, onTyping, placeholder }) 
   async function handleFileSelect(e) {
     const file = e.target.files?.[0];
     if (!file) return;
-
-    // Check file size — max 50MB
-    if (file.size > 50 * 1024 * 1024) {
-      alert('File too large. Maximum size is 50MB.');
-      fileRef.current.value = '';
-      return;
-    }
+    if (file.size > 50 * 1024 * 1024) { alert('File too large. Maximum size is 50MB.'); fileRef.current.value = ''; return; }
 
     setUploading(true); setUploadProg(0);
     try {
-      // Get AES key for encryption
       let aesKey = null;
       try {
         const convSnap = await getDoc(doc(db, 'conversations', convId));
@@ -87,16 +187,12 @@ export default function MessageInput({ convId, onSend, onTyping, placeholder }) 
       } catch(err) {
         console.warn('Could not get encryption key, uploading without encryption');
       }
-
       const { uploadFile } = await import('../../lib/backblaze/b2.js');
       const isImage = file.type.startsWith('image/');
       const result  = await uploadFile(file, aesKey, p => setUploadProg(Math.round(p * 100)));
-
       await onSend(result.fileName, isImage ? 'image' : 'file', {
-        name:     result.name,
-        size:     result.size,
-        mimeType: result.mimeType,
-        iv:       aesKey ? Array.from(result.iv) : null,
+        name: result.name, size: result.size, mimeType: result.mimeType,
+        iv:   aesKey ? Array.from(result.iv) : null,
       });
     } catch(err) {
       console.error('Upload failed:', err);
@@ -109,38 +205,12 @@ export default function MessageInput({ convId, onSend, onTyping, placeholder }) 
 
   return (
     <div style={{ padding:'0 16px 16px', position:'relative' }}>
-      {/* GIF picker */}
-      {showGiphy && (
-        <div style={{ position:'absolute', bottom:'100%', left:16, right:16, marginBottom:8, background:'var(--elevated)', border:'1px solid var(--border)', borderRadius:12, padding:12, zIndex:100, maxHeight:400, overflow:'hidden', display:'flex', flexDirection:'column', gap:8 }}>
-          <input className="krypt-input" placeholder="Search GIFs..." value={gifSearch} onChange={e=>{setGifSearch(e.target.value); setGiphyError(false);}} autoFocus style={{ fontSize:13 }} />
-          <div style={{ overflowY:'auto', flex:1 }}>
-            {!gf ? (
-              <div style={{ padding:20, textAlign:'center', color:'var(--text-faint)', fontSize:13 }}>
-                Giphy API key not configured
-              </div>
-            ) : giphyError ? (
-              <div style={{ padding:20, textAlign:'center', color:'var(--danger)', fontSize:13 }}>
-                Failed to load GIFs. <span style={{ color:'var(--accent)', cursor:'pointer' }} onClick={()=>setGiphyError(false)}>Try again</span>
-              </div>
-            ) : (
-              <Grid
-                width={Math.min(560, window.innerWidth - 80)}
-                columns={3}
-                fetchGifs={fetchGifs}
-                key={gifSearch}
-                onGifClick={(gif, e) => { e.preventDefault(); handleGifSelect(gif); }}
-                onFailure={() => setGiphyError(true)}
-                hideAttribution={false}
-              />
-            )}
-          </div>
-          <div style={{ fontSize:11, color:'var(--text-faint)', textAlign:'right' }}>Powered by GIPHY</div>
-        </div>
-      )}
+      {/* GIF menu — bottom right */}
+      {showGiphy && <GifMenu onSelect={handleGifSelect} onClose={() => setShowGiphy(false)} />}
 
       {/* Emoji picker */}
       {showEmoji && (
-        <div style={{ position:'absolute', bottom:'100%', right:16, marginBottom:8, zIndex:100 }}>
+        <div style={{ position:'absolute', bottom:'100%', right:16, marginBottom:8, zIndex:200 }}>
           <EmojiPicker onEmojiClick={handleEmojiSelect} theme="dark" width={300} height={380} />
         </div>
       )}
@@ -149,7 +219,7 @@ export default function MessageInput({ convId, onSend, onTyping, placeholder }) 
       {uploading && (
         <div style={{ marginBottom:8, padding:'8px 12px', background:'var(--surface)', border:'1px solid var(--border)', borderRadius:8, display:'flex', alignItems:'center', gap:10 }}>
           <div style={{ flex:1, background:'var(--border)', borderRadius:4, height:4, overflow:'hidden' }}>
-            <div style={{ width:`${uploadProg}%`, height:'100%', background:'var(--accent)', transition:'width 0.2s ease' }} />
+            <div style={{ width:`${uploadProg}%`, height:'100%', background:'var(--accent)', transition:'width 0.3s ease' }} />
           </div>
           <span style={{ fontSize:12, color:'var(--text-muted)', flexShrink:0 }}>{uploadProg}%</span>
         </div>

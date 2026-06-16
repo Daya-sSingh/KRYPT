@@ -151,7 +151,7 @@ export async function sendMessage(effectiveId, senderId, content, type = 'text',
     senderId, type,
     iv:         encrypted?.iv         || null,
     ciphertext: encrypted?.ciphertext || null,
-    plaintext:  encrypted ? null : content,
+    plaintext:  encrypted ? null : (type === 'text' ? content : null),
     timestamp:  serverTimestamp(),
     readBy:     [senderId],
     expiresAt,
@@ -184,7 +184,7 @@ export function listenMessages(effectiveId, uid, callback) {
 
   return onSnapshot(q, async snap => {
     // Get AES key from base conversation
-   let aesKey = null;
+    let aesKey = null;
     try {
       const privKey  = await getPrivateKey(uid);
       const convSnap = await getDoc(doc(db, 'conversations', baseConvId));
@@ -194,19 +194,22 @@ export function listenMessages(effectiveId, uid, callback) {
         try {
           aesKey = await decryptAESKey(encKey, privKey);
         } catch {
+          // Key mismatch — try to auto-repair by re-encrypting with current public key
           console.warn('AES key mismatch — attempting auto-repair...');
           try {
+            // Find another member who has a working encrypted key
             const members = convData?.members || [];
             const otherMembers = members.filter(m => m !== uid);
             for (const memberId of otherMembers) {
-              const memberEncKey  = convData?.encryptedKeys?.[memberId];
+              const memberEncKey = convData?.encryptedKeys?.[memberId];
               const memberPrivKey = await getPrivateKey(memberId).catch(() => null);
               if (memberPrivKey && memberEncKey) {
+                // This member can decrypt — use their key to re-encrypt for us
                 const recoveredAesKey = await decryptAESKey(memberEncKey, memberPrivKey);
                 const myPubKeySnap    = await getDoc(doc(db, 'publicKeys', uid));
                 if (myPubKeySnap.exists()) {
-                  const myPubKey  = myPubKeySnap.data().key;
-                  const newEncKey = await encryptAESKeyForUser(recoveredAesKey, myPubKey);
+                  const myPubKey    = myPubKeySnap.data().key;
+                  const newEncKey   = await encryptAESKeyForUser(recoveredAesKey, myPubKey);
                   await updateDoc(doc(db, 'conversations', baseConvId), {
                     [`encryptedKeys.${uid}`]: newEncKey
                   });
@@ -230,12 +233,17 @@ export function listenMessages(effectiveId, uid, callback) {
       const data = d.data();
       if (data.deleted) { messages.push({ id: d.id, ...data, content: null }); continue; }
 
-      if (data.iv && data.ciphertext && aesKey) {
-        try {
-          const content = await decryptMessage({ iv: data.iv, ciphertext: data.ciphertext }, aesKey);
-          messages.push({ id: d.id, ...data, content });
-        } catch {
-          messages.push({ id: d.id, ...data, content: data.plaintext || '[decryption failed]' });
+      if (data.iv && data.ciphertext) {
+        if (aesKey) {
+          try {
+            const content = await decryptMessage({ iv: data.iv, ciphertext: data.ciphertext }, aesKey);
+            messages.push({ id: d.id, ...data, content });
+          } catch {
+            messages.push({ id: d.id, ...data, content: data.plaintext || '🔒 Unable to decrypt message' });
+          }
+        } else {
+          // No AES key — likely a new device or key mismatch
+          messages.push({ id: d.id, ...data, content: '🔒 This message was encrypted on a different device.\nTo view it, open the app on the device you sent it from.' });
         }
       } else {
         messages.push({ id: d.id, ...data, content: data.plaintext || data.content || '' });

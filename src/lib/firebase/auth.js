@@ -202,6 +202,8 @@ export async function getFriendRequests(uid) {
 }
 
 
+// ─── Key Backup ───────────────────────────────────────────────────────────────
+
 export async function saveKeyBackup(uid, password) {
   const blob = await exportEncryptedPrivateKey(uid, password);
   await setDoc(doc(db, 'keyBackups', uid), {

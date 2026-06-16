@@ -60,8 +60,10 @@ function AppLayoutInner() {
         <MembersSidebar group={activeGroup} convId={activeConvId} />
       )}
       {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
+
+      {/* Persistent call banner when viewing a different conv */}
       {inCall && callConvId && callConvId !== activeConvId && (
-        <div style={{ position:'fixed', bottom:24, left:'50%', transform:'translateX(-50%)', zIndex:999, background:'var(--elevated)', border:'1px solid #ffffff33', borderRadius:12, padding:'10px 20px', display:'flex', alignItems:'center', gap:10, cursor:'pointer', boxShadow:'0 4px 20px rgba(0,0,0,0.5)' }}
+        <div style={{ position:'fixed', bottom:24, left:'50%', transform:'translateX(-50%)', zIndex:999, background:'var(--elevated)', border:'1px solid #ffffff33', borderRadius:12, padding:'10px 20px', display:'flex', alignItems:'center', gap:10, cursor:'pointer', boxShadow:'0 4px 20px rgba(0,0,0,0.5)', animation:'slideUp 0.2s ease-out' }}
           onClick={() => handleSelectDM(callConvId)}>
           <span style={{ fontSize:18 }}>📞</span>
           <span style={{ color:'#fff', fontWeight:600, fontSize:14 }}>Call in progress — click to return</span>
@@ -71,8 +73,10 @@ function AppLayoutInner() {
           </button>
         </div>
       )}
+
       <IncomingCallNotification />
       <MessageToasts onNavigate={handleSelectDM} />
+      <style>{`@keyframes slideUp{from{opacity:0;transform:translateX(-50%) translateY(16px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}`}</style>
     </div>
   );
 }

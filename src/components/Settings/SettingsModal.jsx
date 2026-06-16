@@ -319,8 +319,8 @@ function PrivacySection() {
   const { user } = useAuth();
   const [backupPassword,  setBackupPassword]  = useState('');
   const [restorePassword, setRestorePassword] = useState('');
-  const [backupStatus,    setBackupStatus]    = useState(null);
-  const [restoreStatus,   setRestoreStatus]   = useState(null);
+  const [backupStatus,    setBackupStatus]    = useState(null); // null | 'saving' | 'saved' | 'error'
+  const [restoreStatus,   setRestoreStatus]   = useState(null); // null | 'restoring' | 'restored' | 'error'
   const [backupExists,    setBackupExists]    = useState(false);
   const [backupError,     setBackupError]     = useState('');
   const [restoreError,    setRestoreError]    = useState('');
@@ -373,6 +373,7 @@ function PrivacySection() {
           </div>
         </div>
       </Card>
+
       <Card title="Key Backup">
         <div style={{ fontSize:13, color:'var(--text-muted)', marginBottom:14, lineHeight:1.6 }}>
           Back up your encryption key with a password. If you log in on a new device, you can restore it to access your messages.
@@ -380,30 +381,46 @@ function PrivacySection() {
         </div>
         <label style={labelSt}>Backup Password</label>
         <div style={{ display:'flex', gap:8 }}>
-          <input className="krypt-input" type="password" value={backupPassword} onChange={e => setBackupPassword(e.target.value)} placeholder="Min 8 characters" onKeyDown={e => e.key === 'Enter' && handleSaveBackup()} />
+          <input
+            className="krypt-input"
+            type="password"
+            value={backupPassword}
+            onChange={e => setBackupPassword(e.target.value)}
+            placeholder="Min 8 characters"
+            onKeyDown={e => e.key === 'Enter' && handleSaveBackup()}
+          />
           <button className="krypt-button" onClick={handleSaveBackup} disabled={backupStatus === 'saving'} style={{ flexShrink:0, padding:'10px 16px' }}>
             {backupStatus === 'saving' ? '...' : backupStatus === 'saved' ? '✓ Saved' : backupExists ? 'Update' : 'Save'}
           </button>
         </div>
         {backupError && <div style={{ fontSize:12, color:'var(--danger)', marginTop:6 }}>{backupError}</div>}
       </Card>
+
       <Card title="Restore Key on This Device">
         <div style={{ fontSize:13, color:'var(--text-muted)', marginBottom:14, lineHeight:1.6 }}>
           On a new device? Restore your encryption key from your backup to decrypt your messages.
         </div>
         <label style={labelSt}>Backup Password</label>
         <div style={{ display:'flex', gap:8 }}>
-          <input className="krypt-input" type="password" value={restorePassword} onChange={e => setRestorePassword(e.target.value)} placeholder="Enter your backup password" onKeyDown={e => e.key === 'Enter' && handleRestore()} />
+          <input
+            className="krypt-input"
+            type="password"
+            value={restorePassword}
+            onChange={e => setRestorePassword(e.target.value)}
+            placeholder="Enter your backup password"
+            onKeyDown={e => e.key === 'Enter' && handleRestore()}
+          />
           <button className="krypt-button" onClick={handleRestore} disabled={restoreStatus === 'restoring'} style={{ flexShrink:0, padding:'10px 16px' }}>
             {restoreStatus === 'restoring' ? '...' : restoreStatus === 'restored' ? '✓ Restored' : 'Restore'}
           </button>
         </div>
-        {restoreError && <div style={{ fontSize:12, color:'var(--danger)', marginTop:6 }}>{restoreError}</div>}
+        {restoreError  && <div style={{ fontSize:12, color:'var(--danger)',  marginTop:6 }}>{restoreError}</div>}
         {restoreStatus === 'restored' && <div style={{ fontSize:12, color:'var(--accent)', marginTop:6 }}>✓ Key restored! Reload the page to decrypt your messages.</div>}
       </Card>
     </div>
   );
 }
+
 function NotificationsSection({ settings, saveSetting }) {
   return (
     <Card title="Notifications">
